@@ -54,14 +54,10 @@ func MultiHash(data string, results chan string) {
 }
 
 // CombineResults func
-func CombineResults(data []string, out chan interface{}) {
+func CombineResults(data []string) string {
 	go sort.Sort(defaultSort(data))
 	r := strings.Join(data, "_")
-	/* for i := 0; i < len(data)-1; i++ {
-		r += data[i] + "_"
-	}
-	r += data[len(data)-1] */
-	out <- r
+	return r
 }
 
 
@@ -69,14 +65,13 @@ func CombineResults(data []string, out chan interface{}) {
 func ExecutePipeline(data []int) {
 	var results []string
 	ch := make(chan string, 100)
-	out := make(chan interface{}, 100)
 	start := time.Now()
 	for _, i := range data {
 		go MultiHash(strconv.Itoa(i), ch)
 		results = append(results, <-ch)
 		// runtime.Gosched()
 	}
-	CombineResults(results, out)
+	h := CombineResults(results)
 	t := time.Now()
 	elapsed := t.Sub(start)
 	fmt.Println(elapsed)
