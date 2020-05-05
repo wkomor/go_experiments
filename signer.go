@@ -1,12 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
-	"fmt"
-	"time"
-	"sync"
 	"strings"
+	"sync"
+	"time"
 	// "runtime"
 )
 
@@ -16,70 +16,117 @@ func (a defaultSort) Len() int           { return len(a) }
 func (a defaultSort) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a defaultSort) Less(i, j int) bool { return a[i] < a[j] }
 
+func calcSingleHash(data string, ch chan string) {
+	ch <- DataSignerCrc32(data)
+}
 
 // SingleHash func
 //func SingleHash(data string, sh chan<- string) {
-func SingleHash(data string, sh chan<- string) {
-	mu := &sync.Mutex{}
-	mu.Lock()
-	md := DataSignerMd5(data)
-	l :=  DataSignerCrc32(data)
-	r :=  DataSignerCrc32(md)
-	res := l + "~" + r
-	mu.Unlock()
-	sh <- res
+func SingleHash(in, out chan interface{}) {
+	wg := &sync.WaitGroup{}
+	defer wg.Wait()
+	for rawData := range in {
+		data := strconv.Itoa(rawData.(int))
+		dataMd5 := DataSignerMd5(data)
+		wg.Add(1)
+		go func() {
+			leftChan := make(chan string)
+			rightChan := make(chan string)
+			go calcSingleHash(data, leftChan)
+			go calcSingleHash(dataMd5, rightChan)
+			leftCrc32 := <-leftChan
+			rightCrc32 := <-rightChan
+			out <- leftCrc32 + "~" + rightCrc32
+			wg.Done()
+		}()
+	}
+}
+
+func calcMultiHash(item int, multiHash []string, wg *sync.WaitGroup, data string) {
+	multiHash[item] = DataSignerCrc32(strconv.Itoa(item) + data)
+	wg.Done()
 }
 
 // MultiHash func
-func MultiHash(data string, results chan string) {	
-	var wg sync.WaitGroup 
-	wg.Add(6)      
-	multiHash := ""
-	hashed := ""
-	ch := make(chan string, 100)
-	sch := make(chan string)
-	go SingleHash(data, sch)
-	hashed = <- sch
-	iterHash := func (item int, hashed string, ch chan<- string)  {
-		defer wg.Done()
-		ch <-  DataSignerCrc32(strconv.Itoa(item) + hashed)
+func MultiHash(in, out chan interface{}) {
+	wg := &sync.WaitGroup{}
+	defer wg.Wait()
+	for rawData := range in {
+		wg.Add(1)
+		go func(data string) {
+			innerWG := &sync.WaitGroup{}
+			multiHash := make([]string, 6)
+
+			for item := 0; item < 6; item++ {
+				innerWG.Add(1)
+				go calcMultiHash(item, multiHash, innerWG, data)
+			}
+			innerWG.Wait()
+			out <- strings.Join(multiHash, "")
+			wg.Done()
+		}(rawData.(string))
 	}
-	for i := 0; i < 6; i++ {
-		go iterHash(i, hashed, ch)
-		multiHash += <- ch
-	}
-	results <- multiHash
-	wg.Wait()
-	
 }
 
 // CombineResults func
-func CombineResults(data []string) string {
-	go sort.Sort(defaultSort(data))
-	r := strings.Join(data, "_")
-	return r
+func CombineResults(in, out chan interface{}) {
+	var toSort []string
+
+	for data := range in {
+		toSort = append(toSort, data.(string))
+	}
+	sort.Strings(toSort)
+
+	out <- strings.Join(toSort, "_")
 }
 
-
 // ExecutePipeline func
-func ExecutePipeline(data []int) {
-	var results []string
-	ch := make(chan string, 100)
+func ExecutePipeline(hashJobs ...job) {
+	wg := &sync.WaitGroup{}
+	defer wg.Wait()
+	ch := make(chan interface{})
 	start := time.Now()
-	for _, i := range data {
-		go MultiHash(strconv.Itoa(i), ch)
-		results = append(results, <-ch)
-		// runtime.Gosched()
+	for _, singleJob := range hashJobs {
+		wg.Add(1)
+		out := make(chan interface{})
+		go func(jobFunc job, in, out chan interface{}, wg *sync.WaitGroup) {
+			defer wg.Done()
+			defer close(out)
+			jobFunc(in, out)
+		}(singleJob, ch, out, wg)
+		ch = out
 	}
-	h := CombineResults(results)
+
 	t := time.Now()
 	elapsed := t.Sub(start)
 	fmt.Println(elapsed)
-	fmt.Println(h)
+
 }
 
-func main() {
-	inputData := []int{0, 1, 1, 2, 3, 5, 8}
-	//inputData := []int{0, 1}
-	ExecutePipeline(inputData)
-}
+func main() {}
+
+// func main() {
+// 	inputData := []int{0, 1, 1, 2, 3, 5, 8}
+// 	testResult := ""
+// 	hashSignJobs := []job{
+// 		job(func(in, out chan interface{}) {
+// 			for _, fibNum := range inputData {
+// 				out <- fibNum
+// 			}
+// 		}),
+// 		job(SingleHash),
+// 		job(MultiHash),
+// 		job(CombineResults),
+// 		job(func(in, out chan interface{}) {
+// 			dataRaw := <-in
+// 			data, ok := dataRaw.(string)
+// 			if !ok {
+// 				fmt.Println("cant convert result data to string")
+// 			}
+// 			testResult = data
+// 		}),
+// 	}
+
+// 	ExecutePipeline(hashSignJobs...)
+
+// }
