@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	// "runtime"
 )
 
 type defaultSort []string
@@ -21,7 +20,6 @@ func calcSingleHash(data string, ch chan string) {
 }
 
 // SingleHash func
-//func SingleHash(data string, sh chan<- string) {
 func SingleHash(in, out chan interface{}) {
 	wg := &sync.WaitGroup{}
 	defer wg.Wait()
@@ -104,29 +102,3 @@ func ExecutePipeline(hashJobs ...job) {
 }
 
 func main() {}
-
-// func main() {
-// 	inputData := []int{0, 1, 1, 2, 3, 5, 8}
-// 	testResult := ""
-// 	hashSignJobs := []job{
-// 		job(func(in, out chan interface{}) {
-// 			for _, fibNum := range inputData {
-// 				out <- fibNum
-// 			}
-// 		}),
-// 		job(SingleHash),
-// 		job(MultiHash),
-// 		job(CombineResults),
-// 		job(func(in, out chan interface{}) {
-// 			dataRaw := <-in
-// 			data, ok := dataRaw.(string)
-// 			if !ok {
-// 				fmt.Println("cant convert result data to string")
-// 			}
-// 			testResult = data
-// 		}),
-// 	}
-
-// 	ExecutePipeline(hashSignJobs...)
-
-// }
